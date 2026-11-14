@@ -1,0 +1,12 @@
+{
+  "ids": {
+    "A": "aaaaaaaa-0000-4000-8000-000000000001",
+    "B": "bbbbbbbb-0000-4000-8000-000000000002"
+  },
+  "schemas": ["public"],
+  "accept": [
+    { "match": "cross-user-read:public.profiles", "reason": "Profiles are public to logged-in users by design (display name and bio only)." },
+    { "match": "policy-always-true:public.profiles:profiles_read", "reason": "Same decision: profiles are readable by every logged-in user." },
+    { "match": "policy-always-true:public.plans:plans_read", "reason": "The price list is public." }
+  ]
+}

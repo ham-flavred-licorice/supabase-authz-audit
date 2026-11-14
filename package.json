@@ -1,0 +1,42 @@
+{
+  "name": "supabase-authz-audit",
+  "version": "0.1.0",
+  "description": "Automated cross-user authorization audit for Supabase/PostgREST-style Postgres: static catalog scan plus two-account probes of every table, view and RPC.",
+  "type": "module",
+  "bin": {
+    "authz-audit": "bin/authz-audit.mjs"
+  },
+  "exports": "./src/index.mjs",
+  "files": [
+    "bin",
+    "src",
+    "examples/*.sql",
+    "examples/*.json"
+  ],
+  "scripts": {
+    "demo": "node bin/authz-audit.mjs demo",
+    "test": "node --test test/*.test.mjs",
+    "test:pg": "node --test test/pg.integration.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "pg": "^8.23.1"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "supabase",
+    "postgres",
+    "row-level-security",
+    "rls",
+    "security-definer",
+    "postgrest",
+    "authorization",
+    "idor",
+    "bola",
+    "security-audit"
+  ],
+  "private": true
+}

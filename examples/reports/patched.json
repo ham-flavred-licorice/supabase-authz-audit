@@ -1,0 +1,352 @@
+{
+  "tool": {
+    "name": "supabase-authz-audit",
+    "version": "0.1.0"
+  },
+  "generated_at": "2026-11-14T19:44:15.041Z",
+  "target": {
+    "server_version": "18.6",
+    "connected_as": "postgres",
+    "connection_sees_all_rows": true,
+    "schemas": [
+      "public"
+    ],
+    "roles": {
+      "anon": "anon",
+      "authenticated": "authenticated",
+      "service": "service_role"
+    }
+  },
+  "users": {
+    "A": "aaaaaaaa-0000-4000-8000-000000000001",
+    "B": "bbbbbbbb-0000-4000-8000-000000000002"
+  },
+  "verdict": "PASS",
+  "complete": true,
+  "exit_code": 0,
+  "counts": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  },
+  "findings": [],
+  "accepted": [
+    {
+      "id": "cross-user-read:public.profiles",
+      "rule": "cross-user-read",
+      "source": "dynamic",
+      "severity": "high",
+      "object": "public.profiles",
+      "personas": [
+        "Logged-in user A"
+      ],
+      "title": "Logged-in user A can read rows in public.profiles that belong only to user B",
+      "evidence": {
+        "A": {
+          "visible_rows": 1,
+          "user_b_rows": 1
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"sub\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"role\":\"authenticated\",\"aud\":\"authenticated\",\"app_metadata\":{},\"user_metadata\":{}}', true);\nset local role \"authenticated\";\nSELECT count(*)::int AS n FROM public.profiles WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002') AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001'), false);  -- expected 0, got 1\nrollback;",
+      "fix": "Scope the SELECT policy on public.profiles to the caller, for example USING (user_id = auth.uid()). If RLS is off, turn it on first.",
+      "accepted_reason": "Profiles are public to logged-in users by design (display name and bio only)."
+    },
+    {
+      "id": "policy-always-true:public.plans:plans_read",
+      "rule": "policy-always-true",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.plans",
+      "title": "Policy \"plans_read\" on public.plans lets every anon/authenticated caller read every row",
+      "evidence": {
+        "command": "SELECT",
+        "roles": [
+          "anon",
+          "authenticated"
+        ],
+        "using": "true",
+        "with_check": null
+      },
+      "fix": "If the table is public by design, accept this finding with a reason. Otherwise scope it:\n-- ALTER POLICY \"plans_read\" ON public.plans USING (user_id = auth.uid());",
+      "accepted_reason": "The price list is public."
+    },
+    {
+      "id": "policy-always-true:public.profiles:profiles_read",
+      "rule": "policy-always-true",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.profiles",
+      "title": "Policy \"profiles_read\" on public.profiles lets every authenticated caller read every row",
+      "evidence": {
+        "command": "SELECT",
+        "roles": [
+          "authenticated"
+        ],
+        "using": "true",
+        "with_check": null
+      },
+      "fix": "If the table is public by design, accept this finding with a reason. Otherwise scope it:\n-- ALTER POLICY \"profiles_read\" ON public.profiles USING (user_id = auth.uid());",
+      "accepted_reason": "Same decision: profiles are readable by every logged-in user."
+    }
+  ],
+  "unused_accept_rules": [],
+  "gaps": [],
+  "coverage": {
+    "relations": [
+      {
+        "relation": "public.drafts",
+        "kind": "table",
+        "rls": true,
+        "policies": 3,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.invoice_summary",
+        "kind": "view",
+        "rls": null,
+        "policies": 0,
+        "b_rows": 1,
+        "status": "exercised",
+        "owner_can_read": 1,
+        "probes": {
+          "A": {
+            "read": "0/1"
+          },
+          "anon": {
+            "read": "0/1"
+          }
+        }
+      },
+      {
+        "relation": "public.invoices",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.messages",
+        "kind": "table",
+        "rls": true,
+        "policies": 2,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.note_attachments",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.notes",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.plans",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 0,
+        "status": "not exercised: no ownership link found",
+        "owner_can_read": null,
+        "probes": {}
+      },
+      {
+        "relation": "public.profiles",
+        "kind": "table",
+        "rls": true,
+        "policies": 2,
+        "b_rows": 1,
+        "status": "exercised",
+        "owner_can_read": 1,
+        "probes": {
+          "A": {
+            "read": "1/1",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/1",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.support_tickets",
+        "kind": "table",
+        "rls": true,
+        "policies": 2,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      }
+    ],
+    "functions": [
+      {
+        "function": "public.delete_note(p_note_id uuid)",
+        "security_definer": true,
+        "fixed_search_path": true,
+        "execute": {
+          "anon": false,
+          "authenticated": true,
+          "service_role": true,
+          "PUBLIC": false
+        },
+        "args": [
+          {
+            "name": "p_note_id",
+            "source": "target user's data (note_id)"
+          }
+        ],
+        "results": {
+          "A": "scoped to caller",
+          "anon": "no EXECUTE privilege"
+        },
+        "gap": false
+      },
+      {
+        "function": "public.get_notes_for(p_user_id uuid)",
+        "security_definer": true,
+        "fixed_search_path": true,
+        "execute": {
+          "anon": false,
+          "authenticated": true,
+          "service_role": true,
+          "PUBLIC": false
+        },
+        "args": [
+          {
+            "name": "p_user_id",
+            "source": "target user's data (user_id)"
+          }
+        ],
+        "results": {
+          "A": "scoped to caller",
+          "anon": "no EXECUTE privilege"
+        },
+        "gap": false
+      },
+      {
+        "function": "public.my_note_count()",
+        "security_definer": false,
+        "fixed_search_path": false,
+        "execute": {
+          "anon": true,
+          "authenticated": true,
+          "service_role": true,
+          "PUBLIC": true
+        },
+        "args": [],
+        "results": {
+          "A": "no data of user B returned",
+          "anon": "no data of user B returned"
+        },
+        "gap": false
+      }
+    ]
+  },
+  "warnings": []
+}

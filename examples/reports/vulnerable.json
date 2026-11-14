@@ -1,0 +1,796 @@
+{
+  "tool": {
+    "name": "supabase-authz-audit",
+    "version": "0.1.0"
+  },
+  "generated_at": "2026-11-14T19:44:13.479Z",
+  "target": {
+    "server_version": "18.6",
+    "connected_as": "postgres",
+    "connection_sees_all_rows": true,
+    "schemas": [
+      "public"
+    ],
+    "roles": {
+      "anon": "anon",
+      "authenticated": "authenticated",
+      "service": "service_role"
+    }
+  },
+  "users": {
+    "A": "aaaaaaaa-0000-4000-8000-000000000001",
+    "B": "bbbbbbbb-0000-4000-8000-000000000002"
+  },
+  "verdict": "BLOCK",
+  "complete": true,
+  "exit_code": 1,
+  "counts": {
+    "critical": 9,
+    "high": 7,
+    "medium": 4,
+    "low": 0,
+    "info": 0
+  },
+  "findings": [
+    {
+      "id": "cross-user-delete:public.drafts",
+      "rule": "cross-user-delete",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.drafts",
+      "personas": [
+        "Logged-in user A"
+      ],
+      "title": "Logged-in user A can delete user B's rows in public.drafts",
+      "evidence": {
+        "A": {
+          "blind": true,
+          "user_b_rows_before": 2,
+          "user_b_rows_after": 0
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"sub\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"role\":\"authenticated\",\"aud\":\"authenticated\",\"app_metadata\":{},\"user_metadata\":{}}', true);\nset local role \"authenticated\";\nDELETE FROM public.drafts;  -- DESTRUCTIVE if committed: keep it inside this transaction\nrollback;",
+      "fix": "Scope the DELETE policy on public.drafts to the caller. A DELETE policy must never be wider than the SELECT policy."
+    },
+    {
+      "id": "cross-user-delete:public.note_attachments",
+      "rule": "cross-user-delete",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.note_attachments",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can delete user B's rows in public.note_attachments",
+      "evidence": {
+        "A": {
+          "result": "2 row(s) affected",
+          "user_b_rows": 2
+        },
+        "anon": {
+          "result": "2 row(s) affected",
+          "user_b_rows": 2
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nDELETE FROM public.note_attachments WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR note_id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR note_id::text = ANY(ARRAY['10000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b2']::text[])) AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR note_id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR note_id::text = ANY(ARRAY['10000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a2']::text[])), false);  -- expected 0 rows\nrollback;",
+      "fix": "Scope the DELETE policy on public.note_attachments to the caller. A DELETE policy must never be wider than the SELECT policy."
+    },
+    {
+      "id": "cross-user-insert:public.note_attachments",
+      "rule": "cross-user-insert",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.note_attachments",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can insert rows into public.note_attachments that are attributed to user B",
+      "evidence": {
+        "A": {
+          "result": "row passed the authorization check; only constraint 23505 stopped it (the probe replays an existing row)"
+        },
+        "anon": {
+          "result": "row passed the authorization check; only constraint 23505 stopped it (the probe replays an existing row)"
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nINSERT INTO public.note_attachments (id, note_id, file_path) VALUES ('20000000-0000-4000-8000-0000000000b1'::text::uuid, '10000000-0000-4000-8000-0000000000b1'::text::uuid, 'user-b/passport-b1.pdf'::text::text);  -- expected: new row violates row-level security policy\nrollback;",
+      "fix": "Add WITH CHECK to the INSERT policy on public.note_attachments so the owner must be auth.uid()."
+    },
+    {
+      "id": "cross-user-read:public.invoice_summary",
+      "rule": "cross-user-read",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.invoice_summary",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can read rows in public.invoice_summary that belong only to user B",
+      "evidence": {
+        "A": {
+          "visible_rows": 1,
+          "user_b_rows": 1
+        },
+        "anon": {
+          "visible_rows": 1,
+          "user_b_rows": 1
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nSELECT count(*)::int AS n FROM public.invoice_summary WHERE (user_id::text = 'bbbbbbbb-0000-4000-8000-000000000002') AND NOT coalesce((user_id::text = 'aaaaaaaa-0000-4000-8000-000000000001'), false);  -- expected 0, got 1\nrollback;",
+      "fix": "Make the view respect the caller's row access: ALTER VIEW public.invoice_summary SET (security_invoker = true);"
+    },
+    {
+      "id": "cross-user-read:public.note_attachments",
+      "rule": "cross-user-read",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.note_attachments",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can read rows in public.note_attachments that belong only to user B",
+      "evidence": {
+        "A": {
+          "visible_rows": 2,
+          "user_b_rows": 2
+        },
+        "anon": {
+          "visible_rows": 2,
+          "user_b_rows": 2
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nSELECT count(*)::int AS n FROM public.note_attachments WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR note_id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR note_id::text = ANY(ARRAY['10000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b2']::text[])) AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR note_id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR note_id::text = ANY(ARRAY['10000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a2']::text[])), false);  -- expected 0, got 2\nrollback;",
+      "fix": "Scope the SELECT policy on public.note_attachments to the caller, for example USING (user_id = auth.uid()). If RLS is off, turn it on first."
+    },
+    {
+      "id": "cross-user-update:public.note_attachments",
+      "rule": "cross-user-update",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.note_attachments",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can update user B's rows in public.note_attachments",
+      "evidence": {
+        "A": {
+          "result": "2 row(s) affected",
+          "user_b_rows": 2
+        },
+        "anon": {
+          "result": "2 row(s) affected",
+          "user_b_rows": 2
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nUPDATE public.note_attachments SET note_id = note_id WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR note_id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR note_id::text = ANY(ARRAY['10000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b2']::text[])) AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR note_id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR note_id::text = ANY(ARRAY['10000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a2']::text[])), false);  -- expected 0 rows\nrollback;",
+      "fix": "Scope the UPDATE policy on public.note_attachments with both USING and WITH CHECK tied to the caller."
+    },
+    {
+      "id": "cross-user-update:public.profiles",
+      "rule": "cross-user-update",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.profiles",
+      "personas": [
+        "Logged-in user A"
+      ],
+      "title": "Logged-in user A can update user B's rows in public.profiles",
+      "evidence": {
+        "A": {
+          "result": "1 row(s) affected",
+          "user_b_rows": 1
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"sub\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"role\":\"authenticated\",\"aud\":\"authenticated\",\"app_metadata\":{},\"user_metadata\":{}}', true);\nset local role \"authenticated\";\nUPDATE public.profiles SET display_name = display_name WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002') AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001'), false);  -- expected 0 rows\nrollback;",
+      "fix": "Scope the UPDATE policy on public.profiles with both USING and WITH CHECK tied to the caller."
+    },
+    {
+      "id": "rpc-cross-user-read:public.get_notes_for(p_user_id uuid)",
+      "rule": "rpc-cross-user-read",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.get_notes_for(p_user_id uuid)",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can read user B's data by calling public.get_notes_for(p_user_id uuid)",
+      "evidence": {
+        "A": {
+          "values_of_user_b_returned": 6,
+          "sample": [
+            "10000000-0000-4000-8000-0000…",
+            "10000000-0000-4000-8000-0000…",
+            "B note one"
+          ],
+          "arguments": [
+            {
+              "name": "p_user_id",
+              "source": "target user's data (user_id)"
+            }
+          ]
+        },
+        "anon": {
+          "values_of_user_b_returned": 6,
+          "sample": [
+            "10000000-0000-4000-8000-0000…",
+            "10000000-0000-4000-8000-0000…",
+            "B note one"
+          ],
+          "arguments": [
+            {
+              "name": "p_user_id",
+              "source": "target user's data (user_id)"
+            }
+          ]
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nSELECT * FROM public.get_notes_for('bbbbbbbb-0000-4000-8000-000000000002'::uuid);  -- returns user B's data\nrollback;",
+      "fix": "Inside public.get_notes_for(p_user_id uuid), take the identity from auth.uid() instead of an argument, or raise when they differ."
+    },
+    {
+      "id": "rpc-cross-user-write:public.delete_note(p_note_id uuid)",
+      "rule": "rpc-cross-user-write",
+      "source": "dynamic",
+      "severity": "critical",
+      "object": "public.delete_note(p_note_id uuid)",
+      "personas": [
+        "Logged-in user A",
+        "An anonymous visitor"
+      ],
+      "title": "Logged-in user A and an anonymous visitor can change user B's rows by calling public.delete_note(p_note_id uuid)",
+      "evidence": {
+        "A": {
+          "changed": [
+            {
+              "table": "public.note_attachments",
+              "rows_before": 2,
+              "rows_after": 1
+            },
+            {
+              "table": "public.notes",
+              "rows_before": 2,
+              "rows_after": 1
+            }
+          ],
+          "arguments": [
+            {
+              "name": "p_note_id",
+              "source": "target user's data (note_id)"
+            }
+          ]
+        },
+        "anon": {
+          "changed": [
+            {
+              "table": "public.note_attachments",
+              "rows_before": 2,
+              "rows_after": 1
+            },
+            {
+              "table": "public.notes",
+              "rows_before": 2,
+              "rows_after": 1
+            }
+          ],
+          "arguments": [
+            {
+              "name": "p_note_id",
+              "source": "target user's data (note_id)"
+            }
+          ]
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"role\":\"anon\"}', true);\nset local role \"anon\";\nSELECT public.delete_note('10000000-0000-4000-8000-0000000000b1'::uuid);  -- changes user B's rows; DESTRUCTIVE if committed: keep it inside this transaction\nrollback;",
+      "fix": "Inside public.delete_note(p_note_id uuid), verify the row belongs to auth.uid() before changing it (add \"AND user_id = auth.uid()\")."
+    },
+    {
+      "id": "metadata-escalation-read:public.support_tickets",
+      "rule": "metadata-escalation-read",
+      "source": "dynamic",
+      "severity": "high",
+      "object": "public.support_tickets",
+      "personas": [
+        "User A, after editing their own user_metadata"
+      ],
+      "title": "Editing their own user_metadata lets user A read user B's rows in public.support_tickets",
+      "evidence": {
+        "A+user_metadata": {
+          "visible_rows_before": 0,
+          "visible_rows_after": 2,
+          "forged_user_metadata": {
+            "role": "admin",
+            "is_admin": true,
+            "admin": true
+          }
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"sub\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"role\":\"authenticated\",\"aud\":\"authenticated\",\"app_metadata\":{},\"user_metadata\":{\"role\":\"admin\",\"is_admin\":true,\"admin\":true}}', true);\nset local role \"authenticated\";\nSELECT count(*)::int AS n FROM public.support_tickets WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002' OR user_id::text = 'bbbbbbbb-0000-4000-8000-000000000002') AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001' OR user_id::text = 'aaaaaaaa-0000-4000-8000-000000000001'), false);  -- expected 0, got 2\nrollback;",
+      "fix": "Do not use user_metadata in access rules; users can change it themselves. Use app_metadata or a roles table."
+    },
+    {
+      "id": "definer-caller-identity:public.get_notes_for(p_user_id uuid)",
+      "rule": "definer-caller-identity",
+      "severity": "high",
+      "source": "static",
+      "object": "public.get_notes_for(p_user_id uuid)",
+      "title": "SECURITY DEFINER function public.get_notes_for(p_user_id uuid) takes a user id from the caller and never checks who is calling",
+      "evidence": {
+        "identity_parameters": [
+          "p_user_id"
+        ],
+        "caller_check_found": false
+      },
+      "fix": "Take the identity from the session, not from an argument:\n--   ... WHERE user_id = auth.uid()\n-- or reject mismatches at the top of the function:\n--   IF p_user_id IS DISTINCT FROM auth.uid() THEN RAISE EXCEPTION 'not allowed'; END IF;"
+    },
+    {
+      "id": "policy-always-true:public.drafts:drafts_cleanup",
+      "rule": "policy-always-true",
+      "severity": "high",
+      "source": "static",
+      "object": "public.drafts",
+      "title": "Policy \"drafts_cleanup\" on public.drafts allows DELETE on every row for authenticated",
+      "evidence": {
+        "command": "DELETE",
+        "roles": [
+          "authenticated"
+        ],
+        "using": "true",
+        "with_check": null
+      },
+      "fix": "ALTER POLICY \"drafts_cleanup\" ON public.drafts\n  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());  -- use the table's real owner column"
+    },
+    {
+      "id": "policy-always-true:public.profiles:profiles_update",
+      "rule": "policy-always-true",
+      "severity": "high",
+      "source": "static",
+      "object": "public.profiles",
+      "title": "Policy \"profiles_update\" on public.profiles allows UPDATE on every row for authenticated",
+      "evidence": {
+        "command": "UPDATE",
+        "roles": [
+          "authenticated"
+        ],
+        "using": "true",
+        "with_check": null
+      },
+      "fix": "ALTER POLICY \"profiles_update\" ON public.profiles\n  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());  -- use the table's real owner column"
+    },
+    {
+      "id": "policy-user-metadata:public.support_tickets:tickets_read",
+      "rule": "policy-user-metadata",
+      "severity": "high",
+      "source": "static",
+      "object": "public.support_tickets",
+      "title": "Policy \"tickets_read\" on public.support_tickets trusts user_metadata, which every user can edit for themselves",
+      "evidence": {
+        "command": "SELECT",
+        "using": "((user_id = auth.uid()) OR (((auth.jwt() -> 'user_metadata'::text) ->> 'role'::text) = 'admin'::text))",
+        "with_check": null
+      },
+      "fix": "Read roles from app_metadata (server-controlled) or from a roles table:\n-- (auth.jwt() -> 'app_metadata' ->> 'role') = 'support'"
+    },
+    {
+      "id": "rls-disabled:public.note_attachments",
+      "rule": "rls-disabled",
+      "severity": "high",
+      "source": "static",
+      "object": "public.note_attachments",
+      "title": "Row Level Security is off on public.note_attachments and the API roles can reach it",
+      "evidence": {
+        "anon": [
+          "SELECT",
+          "INSERT",
+          "UPDATE",
+          "DELETE"
+        ],
+        "authenticated": [
+          "SELECT",
+          "INSERT",
+          "UPDATE",
+          "DELETE"
+        ]
+      },
+      "fix": "ALTER TABLE public.note_attachments ENABLE ROW LEVEL SECURITY;\n-- then add policies that scope rows to the caller, e.g.\n-- CREATE POLICY own_rows ON public.note_attachments FOR ALL TO authenticated\n--   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());"
+    },
+    {
+      "id": "view-definer-rights:public.invoice_summary",
+      "rule": "view-definer-rights",
+      "severity": "high",
+      "source": "static",
+      "object": "public.invoice_summary",
+      "title": "View public.invoice_summary runs with its owner's rights, so RLS on the tables underneath is skipped",
+      "evidence": {
+        "select": {
+          "anon": true,
+          "authenticated": true
+        },
+        "owner": "postgres",
+        "reads_rls_tables": [
+          "public.invoices"
+        ]
+      },
+      "fix": "ALTER VIEW public.invoice_summary SET (security_invoker = true);"
+    },
+    {
+      "id": "definer-anon-exec:public.delete_note(p_note_id uuid)",
+      "rule": "definer-anon-exec",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.delete_note(p_note_id uuid)",
+      "title": "SECURITY DEFINER function public.delete_note(p_note_id uuid) can be called without logging in",
+      "evidence": {
+        "via_public_grant": true,
+        "anon": true,
+        "authenticated": true,
+        "service_role": true
+      },
+      "fix": "REVOKE EXECUTE ON FUNCTION public.delete_note(p_note_id uuid) FROM PUBLIC, anon;\nGRANT EXECUTE ON FUNCTION public.delete_note(p_note_id uuid) TO authenticated;"
+    },
+    {
+      "id": "definer-anon-exec:public.get_notes_for(p_user_id uuid)",
+      "rule": "definer-anon-exec",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.get_notes_for(p_user_id uuid)",
+      "title": "SECURITY DEFINER function public.get_notes_for(p_user_id uuid) can be called without logging in",
+      "evidence": {
+        "via_public_grant": true,
+        "anon": true,
+        "authenticated": true,
+        "service_role": true
+      },
+      "fix": "REVOKE EXECUTE ON FUNCTION public.get_notes_for(p_user_id uuid) FROM PUBLIC, anon;\nGRANT EXECUTE ON FUNCTION public.get_notes_for(p_user_id uuid) TO authenticated;"
+    },
+    {
+      "id": "definer-search-path:public.delete_note(p_note_id uuid)",
+      "rule": "definer-search-path",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.delete_note(p_note_id uuid)",
+      "title": "SECURITY DEFINER function public.delete_note(p_note_id uuid) has no fixed search_path",
+      "evidence": {
+        "config": []
+      },
+      "fix": "ALTER FUNCTION public.delete_note(p_note_id uuid) SET search_path = '';\n-- and schema-qualify every object the function touches."
+    },
+    {
+      "id": "definer-search-path:public.get_notes_for(p_user_id uuid)",
+      "rule": "definer-search-path",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.get_notes_for(p_user_id uuid)",
+      "title": "SECURITY DEFINER function public.get_notes_for(p_user_id uuid) has no fixed search_path",
+      "evidence": {
+        "config": []
+      },
+      "fix": "ALTER FUNCTION public.get_notes_for(p_user_id uuid) SET search_path = '';\n-- and schema-qualify every object the function touches."
+    }
+  ],
+  "accepted": [
+    {
+      "id": "cross-user-read:public.profiles",
+      "rule": "cross-user-read",
+      "source": "dynamic",
+      "severity": "high",
+      "object": "public.profiles",
+      "personas": [
+        "Logged-in user A"
+      ],
+      "title": "Logged-in user A can read rows in public.profiles that belong only to user B",
+      "evidence": {
+        "A": {
+          "visible_rows": 1,
+          "user_b_rows": 1
+        }
+      },
+      "reproduce": "begin;\nselect set_config('request.jwt.claims', '{\"sub\":\"aaaaaaaa-0000-4000-8000-000000000001\",\"role\":\"authenticated\",\"aud\":\"authenticated\",\"app_metadata\":{},\"user_metadata\":{}}', true);\nset local role \"authenticated\";\nSELECT count(*)::int AS n FROM public.profiles WHERE (id::text = 'bbbbbbbb-0000-4000-8000-000000000002') AND NOT coalesce((id::text = 'aaaaaaaa-0000-4000-8000-000000000001'), false);  -- expected 0, got 1\nrollback;",
+      "fix": "Scope the SELECT policy on public.profiles to the caller, for example USING (user_id = auth.uid()). If RLS is off, turn it on first.",
+      "accepted_reason": "Profiles are public to logged-in users by design (display name and bio only)."
+    },
+    {
+      "id": "policy-always-true:public.plans:plans_read",
+      "rule": "policy-always-true",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.plans",
+      "title": "Policy \"plans_read\" on public.plans lets every anon/authenticated caller read every row",
+      "evidence": {
+        "command": "SELECT",
+        "roles": [
+          "anon",
+          "authenticated"
+        ],
+        "using": "true",
+        "with_check": null
+      },
+      "fix": "If the table is public by design, accept this finding with a reason. Otherwise scope it:\n-- ALTER POLICY \"plans_read\" ON public.plans USING (user_id = auth.uid());",
+      "accepted_reason": "The price list is public."
+    },
+    {
+      "id": "policy-always-true:public.profiles:profiles_read",
+      "rule": "policy-always-true",
+      "severity": "medium",
+      "source": "static",
+      "object": "public.profiles",
+      "title": "Policy \"profiles_read\" on public.profiles lets every authenticated caller read every row",
+      "evidence": {
+        "command": "SELECT",
+        "roles": [
+          "authenticated"
+        ],
+        "using": "true",
+        "with_check": null
+      },
+      "fix": "If the table is public by design, accept this finding with a reason. Otherwise scope it:\n-- ALTER POLICY \"profiles_read\" ON public.profiles USING (user_id = auth.uid());",
+      "accepted_reason": "Same decision: profiles are readable by every logged-in user."
+    }
+  ],
+  "unused_accept_rules": [],
+  "gaps": [],
+  "coverage": {
+    "relations": [
+      {
+        "relation": "public.drafts",
+        "kind": "table",
+        "rls": true,
+        "policies": 3,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "ALLOWED (blind)",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.invoice_summary",
+        "kind": "view",
+        "rls": null,
+        "policies": 0,
+        "b_rows": 1,
+        "status": "exercised",
+        "owner_can_read": 1,
+        "probes": {
+          "A": {
+            "read": "1/1"
+          },
+          "anon": {
+            "read": "1/1"
+          }
+        }
+      },
+      {
+        "relation": "public.invoices",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.messages",
+        "kind": "table",
+        "rls": true,
+        "policies": 2,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.note_attachments",
+        "kind": "table",
+        "rls": false,
+        "policies": 0,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "2/2",
+            "update": "ALLOWED",
+            "delete": "ALLOWED",
+            "insert": "ALLOWED"
+          },
+          "anon": {
+            "read": "2/2",
+            "update": "ALLOWED",
+            "delete": "ALLOWED",
+            "insert": "ALLOWED"
+          }
+        }
+      },
+      {
+        "relation": "public.notes",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.plans",
+        "kind": "table",
+        "rls": true,
+        "policies": 1,
+        "b_rows": 0,
+        "status": "not exercised: no ownership link found",
+        "owner_can_read": null,
+        "probes": {}
+      },
+      {
+        "relation": "public.profiles",
+        "kind": "table",
+        "rls": true,
+        "policies": 2,
+        "b_rows": 1,
+        "status": "exercised",
+        "owner_can_read": 1,
+        "probes": {
+          "A": {
+            "read": "1/1",
+            "update": "ALLOWED",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/1",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          }
+        }
+      },
+      {
+        "relation": "public.support_tickets",
+        "kind": "table",
+        "rls": true,
+        "policies": 2,
+        "b_rows": 2,
+        "status": "exercised",
+        "owner_can_read": 2,
+        "probes": {
+          "A": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "anon": {
+            "read": "0/2",
+            "update": "blocked",
+            "delete": "blocked",
+            "insert": "denied"
+          },
+          "A+user_metadata": {
+            "read": "2/2"
+          }
+        }
+      }
+    ],
+    "functions": [
+      {
+        "function": "public.delete_note(p_note_id uuid)",
+        "security_definer": true,
+        "fixed_search_path": false,
+        "execute": {
+          "anon": true,
+          "authenticated": true,
+          "service_role": true,
+          "PUBLIC": true
+        },
+        "args": [
+          {
+            "name": "p_note_id",
+            "source": "target user's data (note_id)"
+          }
+        ],
+        "results": {
+          "A": "WRITE",
+          "anon": "WRITE"
+        },
+        "gap": false
+      },
+      {
+        "function": "public.get_notes_for(p_user_id uuid)",
+        "security_definer": true,
+        "fixed_search_path": false,
+        "execute": {
+          "anon": true,
+          "authenticated": true,
+          "service_role": true,
+          "PUBLIC": true
+        },
+        "args": [
+          {
+            "name": "p_user_id",
+            "source": "target user's data (user_id)"
+          }
+        ],
+        "results": {
+          "A": "LEAK",
+          "anon": "LEAK"
+        },
+        "gap": false
+      },
+      {
+        "function": "public.my_note_count()",
+        "security_definer": false,
+        "fixed_search_path": false,
+        "execute": {
+          "anon": true,
+          "authenticated": true,
+          "service_role": true,
+          "PUBLIC": true
+        },
+        "args": [],
+        "results": {
+          "A": "no data of user B returned",
+          "anon": "no data of user B returned"
+        },
+        "gap": false
+      }
+    ]
+  },
+  "warnings": []
+}
