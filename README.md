@@ -1,5 +1,7 @@
 # supabase-authz-audit
 
+[![checks](https://github.com/ham-flavred-licorice/supabase-authz-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/ham-flavred-licorice/supabase-authz-audit/actions/workflows/ci.yml)
+
 > **Published for review.** You are welcome to read this code. Running it, copying it or building on it needs the author's permission. To have it run on your project, hire the author.
 
 Answers one question about a Supabase (or any PostgREST-style) Postgres database before launch:
@@ -143,6 +145,7 @@ Things that need a line of config:
 |---|---|
 | PostgreSQL 18.6 (in-process, via PGlite) | 18 tests pass |
 | PostgreSQL 16.15 (native server, `pg` driver) | 5 integration tests pass, including a run as a non-superuser `BYPASSRLS` role, the shape of Supabase's `postgres` user |
+| PostgreSQL 15, 16, 17 and 18 (GitHub Actions, on every push) | the same 5 integration tests pass on each |
 
 ```bash
 npm test                                             # in-process engine
